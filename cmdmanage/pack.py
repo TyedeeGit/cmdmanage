@@ -39,16 +39,22 @@ class Packable(ABC):
         Pack object into a dict.
         :return:
         """
-        pass
+        return {'type': self.typename}
 
     @classmethod
     @abstractmethod
-    def unpack(cls, data: dict) -> 'Packable':
+    def unpack(cls, data: dict) -> Optional['Packable']:
         """
         Unpack a dict into an object.
         :param data:
         """
-        pass
+        typename = data.get('type', '')
+        if not typename:
+            raise TypeError('No type provided!')
+        if typename not in cls.unpacking_types():
+            raise TypeError(f'Invalid type "{typename}"!')
+        if typename != cls.typename:
+            raise TypeError(f'Data with type "{cls.typename}" expected, got data with type "{typename}"')
 
     @classmethod
     @property
@@ -96,16 +102,6 @@ class Packable(ABC):
     def __init_subclass__(cls, **kwargs):
         cls.register_packable(cls)
 
-class MyPackable(Packable):
-    typename = 'some_name'
-
-    def pack(self) -> dict:
-        return {}
-
-    @classmethod
-    def unpack(cls, data: dict) -> 'MyPackable':
-        return cls()
-
 def pack(obj: Packable) -> dict:
     """
     Pack an object into a dict.
@@ -122,7 +118,7 @@ def pack(obj: Packable) -> dict:
 
 def packs(obj: Packable) -> str:
     """
-    Pack an object into a json string.
+    Pack an object into a JSON string.
     :param obj:
     :return:
     """
@@ -142,7 +138,7 @@ def unpack(data: dict) -> Packable:
 
 def unpacks(data: str) -> Packable:
     """
-    Unpack a string into an object.
+    Unpack a JSON string into an object.
     :param data:
     :return:
     """

@@ -23,14 +23,69 @@ import pickle
 import socket
 import struct
 from typing import Optional
+from abc import ABC, abstractmethod
 
 class PipeError(IOError):
     pass
 
-class SocketPipe:
+class Pipe(ABC):
+    @abstractmethod
+    def send(self, obj: object, handle_exception=True) -> bool:
+        """
+        Send a picklable object.
+        :param obj:
+        :param handle_exception:
+        :return:
+        """
+        pass
+
+    @abstractmethod
+    def recv(self, handle_exception=True) -> object:
+        """
+        Receive a picklable object.
+        :return:
+        """
+        pass
+
+    @abstractmethod
+    def recv_all(self, length: int) -> bytes:
+        """
+        Receive exactly a specified amount of bytes.
+        :param length:
+        :return:
+        """
+        pass
+
+    @abstractmethod
+    def recv_bytes(self, amount: int) -> bytes:
+        """
+        Receive up to a specified amount of bytes.
+        :param amount:
+        :return:
+        """
+        pass
+
+    @abstractmethod
+    def send_bytes(self, data: bytes):
+        """
+        Send bytes.
+        :param data:
+        :return:
+        """
+        pass
+
+    @abstractmethod
+    def close(self):
+        """
+        Close the pipe.
+        :return:
+        """
+        pass
+
+class SocketPipe(Pipe):
     def __init__(self, address: tuple[str, int]):
         """
-        A socket with automatic pickling and unpickling.
+        A socket with automatic pickling and unpickling that can act as a pipe.
         """
         self.sock: Optional[socket.socket] = None
         self.conn: Optional[socket.socket] = None
@@ -38,19 +93,13 @@ class SocketPipe:
         self.address = address
 
     def send(self, obj: object, handle_exception=True) -> bool:
-        """
-        Send a picklable object.
-        :param handle_exception:
-        :param obj:
-        :return:
-        """
         if not self.connected:
             raise PipeError('Pipe is not connected!')
         try:
             data = pickle.dumps(obj)
             length = struct.pack('!I', len(data))
-            self.conn.sendall(length)
-            self.conn.sendall(data)
+            self.send_bytes(length)
+            self.send_bytes(data)
             return True
         except OSError as e:
             if handle_exception:
@@ -58,18 +107,14 @@ class SocketPipe:
             raise e
 
     def recv(self, handle_exception=True) -> object:
-        """
-        Receive a picklable object.
-        :return:
-        """
         if not self.connected:
             raise PipeError('Pipe is not connected!')
         try:
-            length_data = self._recv(4)
+            length_data = self.recv_bytes(4)
             if not length_data:
                 return None
             length = struct.unpack('!I', length_data)[0]
-            data = self._recv(length)
+            data = self.recv_bytes(length)
             obj = pickle.loads(data)
             return obj
         except OSError as e:
@@ -77,27 +122,28 @@ class SocketPipe:
                 return None
             raise e
 
-    def _recv(self, length: int) -> bytes:
-        """
-        Helper function to receive the specified amount of data
-        :param length:
-        :return:
-        """
+    def recv_all(self, length: int) -> bytes:
         if not self.connected:
             raise PipeError('Pipe is not connected!')
         data = b''
         while len(data) < length:
-            more = self.conn.recv(length - len(data))
+            more = self.recv_bytes(length - len(data))
             if not more:
                 raise EOFError('Socket closed before receiving all data')
             data += more
         return data
 
+    def send_bytes(self, data: bytes):
+        if not self.connected:
+            raise PipeError('Pipe is not connected!')
+        self.conn.sendall(data)
+
+    def recv_bytes(self, amount: int) -> bytes:
+        if not self.connected:
+            raise PipeError('Pipe is not connected!')
+        return self.conn.recv(amount)
+
     def close(self):
-        """
-        Close the socket.
-        :return:
-        """
         if self.connected:
             self.conn.close()
         self.connected = False
